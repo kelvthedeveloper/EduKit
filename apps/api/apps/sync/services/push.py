@@ -1,2 +1,0 @@
-class PushService:
-    pass
