@@ -1,0 +1,2 @@
+class AssignmentService:
+    pass

@@ -1,0 +1,112 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: edukit
+      POSTGRES_USER: edukit
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edukit"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    restart: unless-stopped
+
+  backend:
+    image: ghcr.io/edukit/backend:latest
+    pull_policy: always
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.school
+      - DATABASE_URL=postgres://edukit:${DB_PASSWORD:-changeme}@postgres:5432/edukit
+      - REDIS_URL=redis://redis:6379/0
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - SCHOOL_NAME=${SCHOOL_NAME}
+      - SYNC_CLOUD_URL=${SYNC_CLOUD_URL}
+      - SYNC_SCHOOL_ID=${SYNC_SCHOOL_ID}
+      - SYNC_API_KEY=${SYNC_API_KEY}
+    volumes:
+      - static_files:/app/staticfiles
+      - media_files:/app/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  worker:
+    image: ghcr.io/edukit/backend:latest
+    pull_policy: always
+    command: celery -A config worker --loglevel=info --beat
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.school
+      - DATABASE_URL=postgres://edukit:${DB_PASSWORD:-changeme}@postgres:5432/edukit
+      - REDIS_URL=redis://redis:6379/0
+      - SYNC_CLOUD_URL=${SYNC_CLOUD_URL}
+      - SYNC_SCHOOL_ID=${SYNC_SCHOOL_ID}
+      - SYNC_API_KEY=${SYNC_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  frontend:
+    image: ghcr.io/edukit/frontend:latest
+    pull_policy: always
+    environment:
+      - NEXT_PUBLIC_API_URL=/api
+      - NEXT_PUBLIC_SCHOOL_NAME=${SCHOOL_NAME}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./infrastructure/nginx/school-server/default.conf:/etc/nginx/conf.d/default.conf
+      - static_files:/var/www/static:ro
+      - media_files:/var/www/media:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+
+  backup:
+    image: postgres:15-alpine
+    volumes:
+      - ./backups:/backups
+    environment:
+      - PGPASSWORD=${DB_PASSWORD:-changeme}
+    command: >
+      sh -c 'while true; do
+        TS=$$(date +%Y%m%d-%H%M%S);
+        pg_dump -h postgres -U edukit edukit > /backups/db-$$TS.sql;
+        echo "Backup created: db-$$TS.sql";
+        find /backups -name "db-*.sql" -mtime +${BACKUP_RETENTION_DAYS:-7} -delete;
+        sleep 86400;
+      done'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  static_files:
+  media_files:

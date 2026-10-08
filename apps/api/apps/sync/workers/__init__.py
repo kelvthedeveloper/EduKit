@@ -1,0 +1,2 @@
+class SyncWorker:
+    pass

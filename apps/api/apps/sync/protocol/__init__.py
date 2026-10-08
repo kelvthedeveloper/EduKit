@@ -1,0 +1,2 @@
+class SyncProtocol:
+    pass

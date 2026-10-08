@@ -1,0 +1,2 @@
+class ConflictResolutionService:
+    pass
