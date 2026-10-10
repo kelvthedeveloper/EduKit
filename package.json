@@ -1,0 +1,15 @@
+{
+  "name": "edukit",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@edukit/web",
+    "build": "npm run build --workspace=@edukit/web",
+    "start": "npm run start --workspace=@edukit/web",
+    "lint": "npm run lint --workspace=@edukit/web",
+    "typecheck": "npm run typecheck --workspace=@edukit/web"
+  }
+}
